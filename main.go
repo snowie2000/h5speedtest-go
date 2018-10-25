@@ -157,6 +157,9 @@ func ipHandler(w http.ResponseWriter, r *http.Request) {
 	if sip == "" {
 		sip = r.RemoteAddr
 	}
+	if !strings.Contains(sip, ":") {
+		sip += ":0"
+	}
 	if ip, e := net.ResolveTCPAddr("tcp", sip); e == nil {
 		w.Write([]byte("{\"processedString\": \"" + ip.IP.String() + "\", \"rawIspInfo\":\"\"}"))
 	} else {
