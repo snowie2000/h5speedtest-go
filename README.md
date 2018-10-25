@@ -19,4 +19,5 @@ Download file from release (or compile by yourself), put it anywhere and run and
 --------
 
 **Credit**
-speedtest for html5 is project by [adolfintel](https://github.com/adolfintel/speedtest)
+
+speedtest for html5 is a project by [adolfintel](https://github.com/adolfintel/speedtest)
