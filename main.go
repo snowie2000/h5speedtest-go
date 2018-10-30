@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 var addr string
@@ -105,6 +106,12 @@ func main() {
 	http.HandleFunc("/", fileHandler)
 	fmt.Println("Listening on", addr)
 	fmt.Println("webroot at", wwwroot)
+	//comment the lines below if you're running Windows
+	if !isWin {
+		syscall.Chroot(wwwroot)
+		wwwroot = ""
+	}
+
 	l, e := net.Listen("tcp", addr)
 	if e != nil {
 		log.Fatal(e)
