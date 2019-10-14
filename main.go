@@ -103,6 +103,10 @@ func main() {
 	http.HandleFunc("/empty.php", ulHandler)
 	http.HandleFunc("/garbage.php", dlHandler)
 	http.HandleFunc("/getIP.php", ipHandler)
+	http.HandleFunc("/backend/empty.php", ulHandler)
+	http.HandleFunc("/backend/garbage.php", dlHandler)
+	http.HandleFunc("/backend/getIP.php", ipHandler)
+
 	http.HandleFunc("/", fileHandler)
 	fmt.Println("Listening on", addr)
 	fmt.Println("webroot at", wwwroot)
@@ -147,8 +151,8 @@ func dlHandler(w http.ResponseWriter, r *http.Request) {
 		if ckSize, e = strconv.Atoi(szCkSize); e != nil {
 			ckSize = 4
 		}
-		if ckSize > 100 {
-			ckSize = 100
+		if ckSize > 5000 {
+			ckSize = 5000
 		}
 	}
 	for ; ckSize > 0; ckSize-- {
