@@ -16,13 +16,19 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/oschwald/geoip2-golang"
 )
 
-var addr string
-var wwwroot string
-var mime map[string]string = make(map[string]string)
-var isWin = os.IsPathSeparator('\\')
-var randomdat []byte = make([]byte, 1024*1024)
+var (
+	addr      string
+	wwwroot   string
+	mime      map[string]string = make(map[string]string)
+	isWin                       = os.IsPathSeparator('\\')
+	randomdat []byte            = make([]byte, 1024*1024)
+	appdir    string
+	ipserver  *geoIP = nil
+)
 
 func prepareMime() {
 	mime[".aac"] = "audio/aac"
@@ -88,10 +94,30 @@ func prepareMime() {
 }
 
 func initDefault() {
-	p, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	wwwroot = p + string(os.PathSeparator) + "speedtest"
+	appdir, _ = filepath.Abs(filepath.Dir(os.Args[0]))
+	wwwroot = appdir + string(os.PathSeparator) + "speedtest"
 	io.ReadFull(rand.Reader, randomdat)
 	prepareMime()
+}
+
+type geoIP struct {
+	db *geoip2.Reader
+}
+
+func (this *geoIP) GetCity(ip string) string {
+	tcpaddr, e := net.ResolveTCPAddr("tcp", ip)
+	if e == nil {
+		city, e := this.db.City(tcpaddr.IP)
+		//isp, e2 := this.db.ISP(tcpaddr.IP)
+		if e == nil {
+			result := fmt.Sprintln(city.City.Names["en"], city.Country.Names["en"])
+			result = strings.ReplaceAll(result, "\x0a", "")
+			if len(result) >= 2 {
+				return result
+			}
+		}
+	}
+	return "Unknown ISP"
 }
 
 func main() {
@@ -110,6 +136,11 @@ func main() {
 	http.HandleFunc("/", fileHandler)
 	fmt.Println("Listening on", addr)
 	fmt.Println("webroot at", wwwroot)
+
+	db, err := geoip2.Open(path.Join(appdir, "ip.dat"))
+	if err == nil {
+		ipserver = &geoIP{db}
+	}
 	//comment the lines below if you're running Windows
 	if !isWin {
 		syscall.Chroot(wwwroot)
@@ -172,7 +203,11 @@ func ipHandler(w http.ResponseWriter, r *http.Request) {
 		sip += ":0"
 	}
 	if ip, e := net.ResolveTCPAddr("tcp", sip); e == nil {
-		w.Write([]byte("{\"processedString\": \"" + ip.IP.String() + "\", \"rawIspInfo\":\"\"}"))
+		locinfo := ""
+		if ipserver != nil {
+			locinfo = ipserver.GetCity(sip)
+		}
+		w.Write([]byte("{\"processedString\": \"" + ip.IP.String() + " - " + locinfo + "\", \"rawIspInfo\":\"\"}"))
 	} else {
 		w.Write([]byte(e.Error()))
 	}
