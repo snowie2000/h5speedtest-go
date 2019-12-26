@@ -191,6 +191,10 @@ func dlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func IsIPv6(address string) bool {
+	return strings.Count(address, ":") >= 2
+}
+
 func ipHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	w.Header().Add("Content-Type", "application/json; charset=utf-8")
@@ -199,7 +203,11 @@ func ipHandler(w http.ResponseWriter, r *http.Request) {
 	if sip == "" {
 		sip = r.RemoteAddr
 	}
-	if !strings.Contains(sip, ":") {
+	if IsIPv6(sip) {
+		if !strings.Contains(sip, "[") {
+			sip = "[" + sip + "]:0"
+		}
+	} else if !strings.Contains(sip, ":") {
 		sip += ":0"
 	}
 	if ip, e := net.ResolveTCPAddr("tcp", sip); e == nil {
