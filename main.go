@@ -3,6 +3,8 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/oschwald/geoip2-golang"
 )
@@ -195,30 +198,69 @@ func IsIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
+func getIP(r *http.Request) string {
+	remoteip := r.Header.Get("X-FORWARDED-FOR")
+	iplist := strings.Split(remoteip, ",")
+	for len(iplist) > 0 && strings.TrimSpace(iplist[len(iplist)-1]) == "127.0.0.1" {
+		iplist = iplist[0 : len(iplist)-1] // remove all the localhosts forwarder
+	}
+
+	if len(iplist) > 0 {
+		if ip, err := net.ResolveIPAddr("ip", strings.TrimSpace(iplist[len(iplist)-1])); err == nil {
+			return ip.IP.String() // use ip from x-forwarded-for
+		}
+	}
+
+	// fallback to r.RemoteAddr
+	if ip, err := net.ResolveIPAddr("ip", r.RemoteAddr); err == nil {
+		return ip.IP.String()
+	} else {
+		return "127.0.0.1" // fallback to localhost if r.RemoteAddr is mocked
+	}
+}
+
+type Ipinfo struct {
+	Ip      string
+	City    string
+	Region  string
+	Country string
+	Loc     string
+	Org     string
+}
+
+var httpsClient = &http.Client{
+	Timeout: 15 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
+}
+
+func getIpInfoOnline(ip string) string {
+	resp, err := httpsClient.Get("https://ipinfo.io/" + ip + "/json")
+	if err == nil {
+		defer resp.Body.Close()
+		var ipnfo Ipinfo
+		jd := json.NewDecoder(resp.Body)
+		if err = jd.Decode(&ipnfo); err == nil {
+			return ipnfo.City + " - " + ipnfo.Org
+		}
+	}
+	return "Error " + err.Error()
+}
+
 func ipHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	sip := r.Header.Get("X-FORWARDED-FOR")
-	if sip == "" {
-		sip = r.RemoteAddr
-	}
-	if IsIPv6(sip) {
-		if !strings.Contains(sip, "[") {
-			sip = "[" + sip + "]:0"
-		}
-	} else if !strings.Contains(sip, ":") {
-		sip += ":0"
-	}
-	if ip, e := net.ResolveTCPAddr("tcp", sip); e == nil {
-		locinfo := ""
-		if ipserver != nil {
-			locinfo = ipserver.GetCity(sip)
-		}
-		w.Write([]byte("{\"processedString\": \"" + ip.IP.String() + " - " + locinfo + "\", \"rawIspInfo\":\"\"}"))
+	sip := getIP(r)
+
+	locinfo := ""
+	if ipserver != nil {
+		locinfo = ipserver.GetCity(sip)
 	} else {
-		w.Write([]byte(e.Error()))
+		locinfo = getIpInfoOnline(sip)
 	}
+	w.Write([]byte("{\"processedString\": \"" + sip + " - " + locinfo + "\", \"rawIspInfo\":\"\"}"))
 }
 
 func fileHandler(w http.ResponseWriter, r *http.Request) {
