@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
@@ -140,6 +141,7 @@ func main() {
 	fmt.Println("Listening on", addr)
 	fmt.Println("webroot at", wwwroot)
 
+	net.DefaultResolver.LookupHost(context.Background(), "localhost") // use the resolver once to make it cache the /etc/resolv.conf so that it knows where to resolve domains after chroot applied
 	db, err := geoip2.Open(path.Join(appdir, "ip.dat"))
 	if err == nil {
 		ipserver = &geoIP{db}
