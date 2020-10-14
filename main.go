@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -141,7 +142,6 @@ func main() {
 	fmt.Println("Listening on", addr)
 	fmt.Println("webroot at", wwwroot)
 
-	net.DefaultResolver.LookupHost(context.Background(), "localhost") // use the resolver once to make it cache the /etc/resolv.conf so that it knows where to resolve domains after chroot applied
 	db, err := geoip2.Open(path.Join(appdir, "ip.dat"))
 	if err == nil {
 		ipserver = &geoIP{db}
@@ -230,12 +230,35 @@ type Ipinfo struct {
 	Org     string
 }
 
-var httpsClient = &http.Client{
-	Timeout: 15 * time.Second,
-	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	},
-}
+var (
+	emptyDialer net.Dialer
+	resolver    net.Resolver = net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{
+				Timeout: time.Millisecond * time.Duration(10000),
+			}
+			return d.DialContext(ctx, network, "1.1.1.1:53")
+		},
+	}
+	httpsClient = &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				addrs, err := resolver.LookupHost(ctx, host)
+				if err != nil || len(addrs) == 0 {
+					return nil, errors.New("not a valid addr")
+				}
+				return emptyDialer.DialContext(ctx, network, addrs[0]+":"+port)
+			},
+		},
+	}
+)
 
 func getIpInfoOnline(ip string) string {
 	resp, err := httpsClient.Get("https://ipinfo.io/" + ip + "/json")
